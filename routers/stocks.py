@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from services.alpha_vantage import (
     get_stock_quote,
     get_stock_history,
@@ -17,12 +17,29 @@ async def stock_quote(symbol: str):
 
 
 @router.get("/{symbol}/history")
-async def stock_history(symbol: str):
-    """Historia cen z ostatnich 100 dni. Przykład: /stocks/AAPL/history"""
+async def stock_history(
+    symbol: str,
+    range: str = Query(default="1M", description="Zakres: 1W, 1M, 3M")
+):
+    """
+    Historia cen z filtrowaniem po zakresie.
+    Przykład: /stocks/AAPL/history?range=1M
+    """
     history = await get_stock_history(symbol.upper())
     if not history:
         raise HTTPException(status_code=404, detail=f"Brak historii dla {symbol}")
-    return {"symbol": symbol.upper(), "history": history}
+
+    # Historia jest posortowana od najnowszej – przycinamy do wybranego zakresu
+    range_map = {
+        "1W": 7,
+        "1M": 30,
+        "3M": 90
+    }
+
+    days = range_map.get(range.upper(), 30)  # domyślnie 30 dni
+    trimmed = history[:days]  # bierzemy pierwsze N wpisów (najnowsze)
+
+    return {"symbol": symbol.upper(), "range": range, "history": trimmed}
 
 
 @router.get("/{symbol}/overview")
