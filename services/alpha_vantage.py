@@ -1,11 +1,23 @@
 import httpx
 import os
+from services.cache import (
+    get_cached, set_cached,
+    quote_cache, history_cache,
+    overview_cache, search_cache, market_cache
+)
 
 API_KEY = os.getenv("ALPHA_VANTAGE_KEY")
 BASE_URL = "https://www.alphavantage.co/query"
 
+
 async def get_stock_quote(symbol: str):
     """Aktualna cena akcji"""
+    cached = get_cached(quote_cache, symbol)
+    if cached:
+        print(f"[CACHE HIT] quote:{symbol}")
+        return cached
+
+    print(f"[CACHE MISS] quote:{symbol}")
     async with httpx.AsyncClient() as client:
         response = await client.get(BASE_URL, params={
             "function": "GLOBAL_QUOTE",
@@ -18,7 +30,7 @@ async def get_stock_quote(symbol: str):
         if not quote:
             return None
 
-        return {
+        result = {
             "symbol": quote.get("01. symbol"),
             "price": float(quote.get("05. price", 0)),
             "change": float(quote.get("09. change", 0)),
@@ -27,14 +39,23 @@ async def get_stock_quote(symbol: str):
             "last_updated": quote.get("07. latest trading day")
         }
 
+    set_cached(quote_cache, symbol, result)
+    return result
+
 
 async def get_stock_history(symbol: str):
     """Historia cen z ostatnich 100 dni"""
+    cached = get_cached(history_cache, symbol)
+    if cached:
+        print(f"[CACHE HIT] history:{symbol}")
+        return cached
+
+    print(f"[CACHE MISS] history:{symbol}")
     async with httpx.AsyncClient() as client:
         response = await client.get(BASE_URL, params={
             "function": "TIME_SERIES_DAILY",
             "symbol": symbol,
-            "outputsize": "compact",  # ostatnie 100 dni
+            "outputsize": "compact",
             "apikey": API_KEY
         })
         data = response.json()
@@ -43,7 +64,6 @@ async def get_stock_history(symbol: str):
         if not time_series:
             return None
 
-        # Zamieniamy słownik dat na listę obiektów – łatwiej obsłużyć w iOS
         history = []
         for date, values in time_series.items():
             history.append({
@@ -55,13 +75,20 @@ async def get_stock_history(symbol: str):
                 "volume": int(values.get("5. volume", 0))
             })
 
-        # Sortujemy od najnowszej do najstarszej
         history.sort(key=lambda x: x["date"], reverse=True)
-        return history
+
+    set_cached(history_cache, symbol, history)
+    return history
 
 
 async def get_company_overview(symbol: str):
-    """Informacje o spółce – nazwa, sektor, opis, wskaźniki"""
+    """Informacje o spółce"""
+    cached = get_cached(overview_cache, symbol)
+    if cached:
+        print(f"[CACHE HIT] overview:{symbol}")
+        return cached
+
+    print(f"[CACHE MISS] overview:{symbol}")
     async with httpx.AsyncClient() as client:
         response = await client.get(BASE_URL, params={
             "function": "OVERVIEW",
@@ -73,7 +100,7 @@ async def get_company_overview(symbol: str):
         if not data or "Symbol" not in data:
             return None
 
-        return {
+        result = {
             "symbol": data.get("Symbol"),
             "name": data.get("Name"),
             "description": data.get("Description"),
@@ -87,9 +114,18 @@ async def get_company_overview(symbol: str):
             "country": data.get("Country")
         }
 
+    set_cached(overview_cache, symbol, result)
+    return result
+
 
 async def search_symbol(keywords: str):
-    """Wyszukiwanie spółek po nazwie lub symbolu"""
+    """Wyszukiwanie spółek"""
+    cached = get_cached(search_cache, keywords)
+    if cached:
+        print(f"[CACHE HIT] search:{keywords}")
+        return cached
+
+    print(f"[CACHE MISS] search:{keywords}")
     async with httpx.AsyncClient() as client:
         response = await client.get(BASE_URL, params={
             "function": "SYMBOL_SEARCH",
@@ -99,8 +135,7 @@ async def search_symbol(keywords: str):
         data = response.json()
         matches = data.get("bestMatches", [])
 
-        # Mapujemy brzydkie klucze Alpha Vantage na czytelne nazwy
-        return [
+        result = [
             {
                 "symbol": m.get("1. symbol"),
                 "name": m.get("2. name"),
@@ -112,13 +147,25 @@ async def search_symbol(keywords: str):
             for m in matches
         ]
 
+    set_cached(search_cache, keywords, result)
+    return result
+
 
 async def get_market_status():
-    """Status rynków – otwarte/zamknięte"""
+    """Status rynków"""
+    cached = get_cached(market_cache, "status")
+    if cached:
+        print(f"[CACHE HIT] market_status")
+        return cached
+
+    print(f"[CACHE MISS] market_status")
     async with httpx.AsyncClient() as client:
         response = await client.get(BASE_URL, params={
             "function": "MARKET_STATUS",
             "apikey": API_KEY
         })
         data = response.json()
-        return data.get("markets", [])
+        result = data.get("markets", [])
+
+    set_cached(market_cache, "status", result)
+    return result
