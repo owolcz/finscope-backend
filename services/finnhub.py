@@ -1,9 +1,9 @@
+# Serwis danych rynkowych – pobiera kursy, historię i wiadomości z Finnhub API i yfinance.
 import asyncio
 import httpx
 import os
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
-import zoneinfo
 from services.cache import (
     get_cached, set_cached,
     quote_cache, history_cache,
@@ -13,24 +13,7 @@ from services.cache import (
 API_KEY = os.getenv("FINNHUB_KEY")
 BASE_URL = "https://finnhub.io/api/v1"
 
-_MARKET_EXCHANGES = [
-    {"region": "United States",  "primary_exchanges": "NYSE, NASDAQ",            "tz": "America/New_York", "local_open": "09:30", "local_close": "16:00"},
-    {"region": "United Kingdom", "primary_exchanges": "London Stock Exchange",   "tz": "Europe/London",    "local_open": "08:00", "local_close": "16:30"},
-    {"region": "Canada",         "primary_exchanges": "Toronto Stock Exchange",  "tz": "America/Toronto",  "local_open": "09:30", "local_close": "16:00"},
-    {"region": "Germany",        "primary_exchanges": "Frankfurt Stock Exchange", "tz": "Europe/Berlin",   "local_open": "09:00", "local_close": "17:30"},
-]
-
-def _is_market_open(tz_name: str, open_str: str, close_str: str) -> bool:
-    tz = zoneinfo.ZoneInfo(tz_name)
-    now = datetime.now(tz)
-    if now.weekday() >= 5:
-        return False
-    def t(s):
-        h, m = map(int, s.split(":"))
-        return now.replace(hour=h, minute=m, second=0, microsecond=0)
-    return t(open_str) <= now < t(close_str)
-
-
+# Pobiera aktualny kurs akcji z Finnhub; zwraca None gdy symbol nieznany lub cena zerowa.
 async def get_stock_quote(symbol: str):
     cached = get_cached(quote_cache, symbol)
     if cached and cached.get("price", 0) != 0:
@@ -62,6 +45,7 @@ async def get_stock_quote(symbol: str):
     return result
 
 
+# Pobiera 6-miesięczną historię OHLCV z yfinance i zwraca posortowaną malejąco listę świec.
 async def get_stock_history(symbol: str):
     cached = get_cached(history_cache, symbol)
     if cached:
@@ -95,6 +79,7 @@ async def get_stock_history(symbol: str):
     return history
 
 
+# Pobiera kurs aktywu (krypto, forex itp.) via yfinance na podstawie ostatnich 5 dni.
 async def get_asset_quote(symbol: str):
     cached = get_cached(quote_cache, symbol)
     if cached and cached.get("price", 0) != 0:
@@ -125,6 +110,7 @@ async def get_asset_quote(symbol: str):
     return result
 
 
+# Pobiera szczegółowe informacje o spółce z yfinance (sektor, P/E, kapitalizacja, dywidenda itp.).
 async def get_company_overview(symbol: str):
     cached = get_cached(overview_cache, symbol)
     if cached:
@@ -161,6 +147,7 @@ async def get_company_overview(symbol: str):
     return result
 
 
+# Pobiera do 10 wiadomości z ostatnich 7 dni dla spółki z Finnhub.
 async def get_company_news(symbol: str):
     cache_key = f"news:{symbol}"
     cached = get_cached(market_cache, cache_key)
@@ -200,6 +187,7 @@ async def get_company_news(symbol: str):
     return result
 
 
+# Wyszukuje symbole akcji w Finnhub; filtruje tylko Common Stock bez kropki w symbolu.
 async def search_symbol(keywords: str):
     cached = get_cached(search_cache, keywords)
     if cached:
@@ -230,16 +218,3 @@ async def search_symbol(keywords: str):
     return result
 
 
-async def get_market_status():
-    result = [
-        {
-            "region":            ex["region"],
-            "primary_exchanges": ex["primary_exchanges"],
-            "local_open":        ex["local_open"],
-            "local_close":       ex["local_close"],
-            "current_status":    "open" if _is_market_open(ex["tz"], ex["local_open"], ex["local_close"]) else "closed",
-            "notes":             "",
-        }
-        for ex in _MARKET_EXCHANGES
-    ]
-    return result
