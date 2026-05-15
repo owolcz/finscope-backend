@@ -43,6 +43,14 @@ uvicorn main:app --reload
 Serwer działa na http://localhost:8000  
 Dokumentacja API: http://localhost:8000/docs
 
+## Testy
+
+```
+pytest tests/ -v
+```
+
+Testy nie wymagają klucza API — wszystkie wywołania zewnętrzne są mockowane.
+
 ## Endpointy
 
 | Endpoint | Opis |
